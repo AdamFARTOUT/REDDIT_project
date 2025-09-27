@@ -13,5 +13,5 @@ reddit = praw.Reddit(
 )
 
 print("read_only:", reddit.read_only)
-for post in reddit.subreddit("python").hot(limit=3):
+for post in reddit.subreddit("ArtificialIntelligence").hot(limit=3):
     print(post.title)

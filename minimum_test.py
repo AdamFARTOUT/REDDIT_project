@@ -106,3 +106,4 @@ if __name__ == "__main__":
 
     fetch_top_comments_for_recent_posts(limit_posts=200, comments_per_post=COMMENTS_PER_POST)
     print("Ingestion done.")
+# minimum_test
