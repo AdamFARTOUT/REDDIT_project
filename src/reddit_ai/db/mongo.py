@@ -5,7 +5,6 @@ from .indexes import create_indexes
 
 @lru_cache()
 def get_client():
-    print("Connecting to MongoDB…")
     client = MongoClient(MONGO_URI)
     return client
 def get_db():
