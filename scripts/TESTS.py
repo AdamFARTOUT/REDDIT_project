@@ -26,8 +26,11 @@
 from src.reddit_ai.utils.logging_setup import setup_logging
 setup_logging()  # console INFO+, file DEBUG+ to logs/app.log
 from src.reddit_ai.collectors.posts import fetch_posts_details
+from src.reddit_ai.collectors.comments import fetch_comments_details
 from src.reddit_ai.config import REDDIT
 import praw
 reddit= praw.Reddit(**REDDIT)
-for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=3):
-    print(doc ,'\n')   # or send to your repo upsert
+for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=2):
+    print(doc ,'\n') # or send to your repo upsert
+    for comm in fetch_comments_details(reddit, doc['_id'], limit=2):
+        print(comm ,'\n') # or send to your repo upsert
