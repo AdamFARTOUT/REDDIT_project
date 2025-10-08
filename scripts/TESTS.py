@@ -17,9 +17,17 @@
 #     client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
 #     user_agent=os.getenv("REDDIT_USER_AGENT", "RedditAITrend by u/unknown"),
 # )
+# from src.reddit_ai.utils.logging_setup import setup_logging
+# setup_logging()  # console INFO+, file DEBUG+ to logs/app.log
+
+# from src.reddit_ai.db.mongo import get_db
+
+# db = get_db()
 from src.reddit_ai.utils.logging_setup import setup_logging
 setup_logging()  # console INFO+, file DEBUG+ to logs/app.log
-
-from src.reddit_ai.db.mongo import get_db
-
-db = get_db()
+from src.reddit_ai.collectors.posts import fetch_posts_details
+from src.reddit_ai.config import REDDIT
+import praw
+reddit= praw.Reddit(**REDDIT)
+for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=10):
+    print(doc)   # or send to your repo upsert
