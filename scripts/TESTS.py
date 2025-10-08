@@ -29,5 +29,5 @@ from src.reddit_ai.collectors.posts import fetch_posts_details
 from src.reddit_ai.config import REDDIT
 import praw
 reddit= praw.Reddit(**REDDIT)
-for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=10):
-    print(doc)   # or send to your repo upsert
+for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=3):
+    print(doc ,'\n')   # or send to your repo upsert
