@@ -5,10 +5,6 @@ from ..utils.common import ts_now, is_englishish
 
 logger = logging.getLogger(__name__)
 
-
-
-
-
 def fetch_posts_details(
     reddit,
     subreddit: str,
