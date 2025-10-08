@@ -1,21 +1,9 @@
 import time
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
+from ..utils.common import ts_now, is_englishish
 
 logger = logging.getLogger(__name__)
-
-def ts_now():
-    return datetime.now(timezone.utc)
-
-def _is_englishish(text: str, min_len: int = 10, min_ascii_ratio: float = 0.6) -> bool:
-    """Tiny heuristic: require minimal length and enough ASCII letters."""
-    if not text:
-        return False
-    t = text.strip()
-    if len(t) < min_len:
-        return False
-    letters = sum(ch.isascii() and ch.isalpha() for ch in t)
-    return (letters / max(1, len(t))) >= min_ascii_ratio
 
 def fetch_posts_details(
     reddit,
@@ -29,7 +17,21 @@ def fetch_posts_details(
     english_only: bool = True,
     debug_samples: int = 3,
 ):
-    
+    """
+    Fetch posts for a given Reddit subreddit.
+
+    Args:
+        reddit: Authenticated PRAW Reddit instance.
+        subreddit (str): Name of the subreddit to fetch posts from.
+        listing (str): Type of listing to fetch (new, hot, top).
+        limit (int): Maximum number of posts to fetch.
+        window_days (int): Time window in days to consider for posts.
+        time_filter (str): Time filter for top listings (day, week, month).
+        include_nsfw (bool): Whether to include NSFW posts.
+        skip_bots (bool): Whether to skip posts made by bots.
+        english_only (bool): Whether to include only English-like posts.
+        debug_samples (int): Number of sample posts to log for debugging.
+    """   
     # 1) validate listing
     valid_listings = {"new", "hot", "top"}
     if listing not in valid_listings:
@@ -80,7 +82,7 @@ def fetch_posts_details(
                 stats["skipped_nsfw"] += 1
                 continue
             text_for_lang = (sub.title or "") + " " + (sub.selftext or "")
-            if english_only and not _is_englishish(text_for_lang):
+            if english_only and not is_englishish(text_for_lang):
                 stats["skipped_lang"] += 1
                 continue
 
