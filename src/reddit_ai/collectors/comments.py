@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Iterator, Dict, Any
 from ..utils.common import ts_now, is_englishish
 
@@ -12,7 +13,6 @@ def fetch_comments_details(
     cap: int = 500,            # max to scan from API
     limit: int = 100,          # max to yield
     top_level_only: bool = True,
-    include_nsfw: bool = False,
     skip_bots: bool = True,
     english_only: bool = True,
     debug_samples: int = 3,
@@ -23,7 +23,7 @@ def fetch_comments_details(
     Args:
         reddit: Authenticated PRAW Reddit instance.
         post_id: ID of the Reddit post to fetch comments from.
-        sort: 'new' | 'top' | 'best' | 'old'
+        sort: 'new' | 'top' | 'confidence' | 'old'
         cap: Max comments to *scan* from API.
         limit: Max comments to *yield*.
         top_level_only: Only top-level comments if True, else all levels.
@@ -32,24 +32,22 @@ def fetch_comments_details(
         english_only: Keep only English-like comments via is_englishish(comment.body).
         debug_samples: Number of sample bodies to log.
     """
+    valid_sorts = {"top", "new", "old", "qa", "controversial"}
+    if sort not in valid_sorts:
+        logger.error("Failed to access comments of post r/%s | Invalid sort '%s'. Expected one of %s.", post_id, sort, valid_sorts)
+        raise ValueError(f"Invalid sort '{sort}'. Expected one of {valid_sorts}.")
     logger.info(
-        "Fetching comments for post %s | sort=%s | cap=%d | limit=%d | top_level_only=%s | include_nsfw=%s | skip_bots=%s | english_only=%s | debug_samples=%d",
-        post_id, sort, cap, limit, top_level_only, include_nsfw, skip_bots, english_only, debug_samples
+        "Fetching comments for post %s | sort=%s | cap=%d | limit=%d | top_level_only=%s | skip_bots=%s | english_only=%s | debug_samples=%d",
+        post_id, sort, cap, limit, top_level_only, skip_bots, english_only, debug_samples
     )
 
-    stats = dict(seen=0, yielded=0, skipped_removed=0, skipped_bots=0, skipped_lang=0, skipped_nsfw=0)
+    stats = dict(seen=0, yielded=0, skipped_removed=0, skipped_bots=0, skipped_lang=0)
     sample_left = debug_samples
 
     # Fetch submission once
     submission = reddit.submission(id=post_id)
     submission.comment_sort = sort
     submission.comments.replace_more(limit=0)
-
-    # NSFW gate at submission level
-    if not include_nsfw and getattr(submission, "over_18", False):
-        stats["skipped_nsfw"] += 1
-        logger.info("Submission %s is NSFW; skipping. Stats: %s", post_id, stats)
-        return
 
     # Build the iterable of comments
     if top_level_only:
@@ -63,44 +61,57 @@ def fetch_comments_details(
             break
 
         stats["seen"] += 1
+        
+        try:
+            # removed / deleted
+            if getattr(comment, "removal_reason", None) is not None or comment.author is None:
+                stats["skipped_removed"] += 1
+                continue
+            if str(comment.author).lower() in ["[deleted]", "[removed]"] or comment.body in ["[deleted]", "[removed]"]:
+                stats["skipped_removed"] += 1
+                continue
 
-        # removed / deleted
-        if getattr(comment, "removed_by_category", None) is not None or comment.author is None:
-            stats["skipped_removed"] += 1
-            continue
-        if str(comment.author).lower() == "[deleted]":
-            stats["skipped_removed"] += 1
-            continue
+            # bot filter
+            author_str = str(comment.author)
+            if skip_bots and "bot"  in author_str.lower() and author_str.lower() == "automoderator":
+                stats["skipped_bots"] += 1
+                continue
 
-        # bot filter
-        author_str = str(comment.author)
-        if skip_bots and "bot" in author_str.lower():
-            stats["skipped_bots"] += 1
-            continue
+            # language filter
+            body = getattr(comment, "body", "") or ""
+            if english_only and not is_englishish(body):
+                stats["skipped_lang"] += 1
+                continue
 
-        # language filter
-        body = getattr(comment, "body", "") or ""
-        if english_only and not is_englishish(body):
-            stats["skipped_lang"] += 1
-            continue
+            doc = {
+                "_id": comment.id,
+                "comment_id": comment.id,
+                "post_id": post_id,
+                "subreddit": submission.subreddit.display_name,
+                "author": author_str,
+                "body": body,
+                "score": int(getattr(comment, "score", 0)),
+                "created_utc": int(getattr(comment, "created_utc", 0)),
+                "parent_id": getattr(comment, "parent_id", None),
+                "ingested_at": ts_now(),  # ingestion timestamp
+            }
 
-        doc = {
-            "comment_id": comment.id,
-            "post_id": post_id,
-            "subreddit": submission.subreddit.display_name,
-            "author": author_str,
-            "body": body,
-            "score": int(getattr(comment, "score", 0)),
-            "created_utc": int(getattr(comment, "created_utc", 0)),
-            "parent_id": getattr(comment, "parent_id", None),
-            "ingested_at": ts_now().isoformat(),  # serialize as ISO string
-        }
+            if sample_left > 0:
+                sample_left -= 1
+                logger.debug("Sample comment: %s", body[:500])
 
-        if sample_left > 0:
-            sample_left -= 1
-            logger.debug("Sample comment: %s", body[:500])
+            yield doc
+            stats["yielded"] += 1
+            
+            if stats["seen"] % 50 == 0:
+                    time.sleep(0.2)
+        except Exception as e:
+            logger.exception("Error processing comment in post %s: %s", post_id, e)       
 
-        yield doc
-        stats["yielded"] += 1
-
-    logger.info("Done post %s. Stats: %s", post_id, stats)
+        logger.info(
+        "Finished r/%s | seen=%d yielded=%d skipped(old=%d, removed=%d, bots=%d,  lang=%d)",
+        post_id,
+        stats["seen"], stats["yielded"],
+        stats["skipped_old"], stats["skipped_removed"], stats["skipped_bots"],
+        stats["skipped_lang"]
+    )

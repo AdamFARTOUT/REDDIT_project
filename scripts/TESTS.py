@@ -30,7 +30,29 @@ from src.reddit_ai.collectors.comments import fetch_comments_details
 from src.reddit_ai.config import REDDIT
 import praw
 reddit= praw.Reddit(**REDDIT)
-for doc in fetch_posts_details(reddit, "Artificial", listing="new", limit=2):
+for doc in fetch_posts_details(reddit, "Artificial", listing="top", limit=1,window_days=2000,time_filter="all"):
     print(doc ,'\n') # or send to your repo upsert
-    for comm in fetch_comments_details(reddit, doc['_id'], limit=2):
-        print(comm ,'\n') # or send to your repo upsert
+    
+    
+# for comm in fetch_comments_details(reddit, "1o1ggnu", limit= 2):
+#     print(comm ,'\n') # or send to your repo upsert
+# from pprint import pprint
+
+# c = reddit.comment("nigi4si")
+# c.refresh()  # ensure it’s loaded (or you already got it via submission.comments)
+# pprint({k: v for k, v in vars(c).items() if not k.startswith("_")})
+
+from pprint import pprint
+
+# sub = reddit.submission(id="1o1ggnu")
+# _ = sub.title            # touch one attr to force a fetch
+# pprint({k: v for k, v in vars(sub).items() if not k.startswith("_")})
+
+
+
+submission = reddit.submission(id="1d6iggo")
+submission.comment_sort = "old"
+submission.comments.replace_more(limit=0)
+all_comments = submission.comments.list()
+comment= all_comments[0]
+pprint({k: v for k, v in vars(comment).items() if not k.startswith("_")})
