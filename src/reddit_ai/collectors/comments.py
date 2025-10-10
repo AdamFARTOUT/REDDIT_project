@@ -5,6 +5,16 @@ from ..utils.common import ts_now, is_englishish
 
 logger = logging.getLogger(__name__)
 
+def is_top_level_comment(c) -> bool:
+    v = getattr(c, "is_root", None)       # works if your PRAW has it
+    if v is not None:
+        return bool(v)
+    if getattr(c, "depth", None) is not None:
+        return c.depth == 0
+    pid = (getattr(c, "parent_id", "") or "")
+    lid = (getattr(c, "link_id", "") or "")
+    return pid.startswith("t3_") or (pid == lid)
+
 def fetch_comments_details(
     reddit,
     post_id: str,
@@ -27,19 +37,18 @@ def fetch_comments_details(
         cap: Max comments to *scan* from API.
         limit: Max comments to *yield*.
         top_level_only: Only top-level comments if True, else all levels.
-        include_nsfw: If False and submission is NSFW, skip entirely.
         skip_bots: Skip authors whose username contains 'bot'.
         english_only: Keep only English-like comments via is_englishish(comment.body).
         debug_samples: Number of sample bodies to log.
     """
-    valid_sorts = {"top", "new", "old", "qa", "controversial"}
+    if sort == "best":
+        sort = "confidence"
+
+    valid_sorts = {"top", "new", "old", "qa", "controversial","confidence"}
     if sort not in valid_sorts:
         logger.error("Failed to access comments of post r/%s | Invalid sort '%s'. Expected one of %s.", post_id, sort, valid_sorts)
         raise ValueError(f"Invalid sort '{sort}'. Expected one of {valid_sorts}.")
-    logger.info(
-        "Fetching comments for post %s | sort=%s | cap=%d | limit=%d | top_level_only=%s | skip_bots=%s | english_only=%s | debug_samples=%d",
-        post_id, sort, cap, limit, top_level_only, skip_bots, english_only, debug_samples
-    )
+    
 
     stats = dict(seen=0, yielded=0, skipped_removed=0, skipped_bots=0, skipped_lang=0)
     sample_left = debug_samples
@@ -47,8 +56,11 @@ def fetch_comments_details(
     # Fetch submission once
     submission = reddit.submission(id=post_id)
     submission.comment_sort = sort
-    submission.comments.replace_more(limit=0)
-
+    if not top_level_only:
+        submission.comments.replace_more(limit=0)
+    logger.info("Fetching comments for post %s | subreddit=%s | sort=%s | cap=%d | limit=%d | top_level_only=%s | skip_bots=%s | english_only=%s | debug_samples=%d",
+            post_id, submission.subreddit.display_name, sort, cap, limit, top_level_only, skip_bots, english_only, debug_samples
+    )
     # Build the iterable of comments
     if top_level_only:
         pool = submission.comments[:cap]
@@ -64,7 +76,7 @@ def fetch_comments_details(
         
         try:
             # removed / deleted
-            if getattr(comment, "removal_reason", None) is not None or comment.author is None:
+            if  comment.author is None:
                 stats["skipped_removed"] += 1
                 continue
             if str(comment.author).lower() in ["[deleted]", "[removed]"] or comment.body in ["[deleted]", "[removed]"]:
@@ -73,7 +85,8 @@ def fetch_comments_details(
 
             # bot filter
             author_str = str(comment.author)
-            if skip_bots and "bot"  in author_str.lower() and author_str.lower() == "automoderator":
+            low = author_str.lower()
+            if skip_bots and ("bot" in low or low == "automoderator"):
                 stats["skipped_bots"] += 1
                 continue
 
@@ -91,14 +104,17 @@ def fetch_comments_details(
                 "author": author_str,
                 "body": body,
                 "score": int(getattr(comment, "score", 0)),
+                "is_top_level": is_top_level_comment(comment),
+                "permalink": f"https://reddit.com{comment.permalink}",
                 "created_utc": int(getattr(comment, "created_utc", 0)),
                 "parent_id": getattr(comment, "parent_id", None),
                 "ingested_at": ts_now(),  # ingestion timestamp
+                "sort": sort,
             }
 
             if sample_left > 0:
                 sample_left -= 1
-                logger.debug("Sample comment: %s", body[:500])
+                logger.debug("Sample comment: %s", body[:200].replace("\n", " "))
 
             yield doc
             stats["yielded"] += 1
@@ -108,10 +124,7 @@ def fetch_comments_details(
         except Exception as e:
             logger.exception("Error processing comment in post %s: %s", post_id, e)       
 
-        logger.info(
-        "Finished r/%s | seen=%d yielded=%d skipped(old=%d, removed=%d, bots=%d,  lang=%d)",
-        post_id,
-        stats["seen"], stats["yielded"],
-        stats["skipped_old"], stats["skipped_removed"], stats["skipped_bots"],
-        stats["skipped_lang"]
-    )
+    logger.info("Finished post %s (r/%s) | seen=%d yielded=%d skipped(removed=%d, bots=%d, lang=%d)",
+            post_id, submission.subreddit.display_name,
+            stats["seen"], stats["yielded"],
+            stats["skipped_removed"], stats["skipped_bots"], stats["skipped_lang"])
