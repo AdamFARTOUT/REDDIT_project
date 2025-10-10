@@ -5,7 +5,5 @@ def create_indexes(db):
     comments = db.comments
 
     # --- indexes (idempotent) ---
-    posts.create_index([("post_id", ASCENDING)], unique=True)
     posts.create_index([("subreddit", ASCENDING), ("created_utc", DESCENDING)])
-    comments.create_index([("comment_id", ASCENDING)], unique=True)
     comments.create_index([("post_id", ASCENDING), ("created_utc", DESCENDING)])
