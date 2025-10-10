@@ -19,6 +19,5 @@ def get_db():
     client = get_client()
     db = client[MONGO_DB]
     return db   
-def ensure_indexes():
-    db = get_db()
+def ensure_indexes(db):
     create_indexes(db)
